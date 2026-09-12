@@ -13,13 +13,19 @@ connector into a market research assistant.
   `get_price_snapshot`, `get_price_history`, `get_option_parameters`,
   `get_option_data`, `get_company_themes`, `get_company_connections`,
   `search_investment_topics`, `get_theme_details`, and futures equivalents).
+- [`.claude/skills/ibkr-portfolio-monitor/`](.claude/skills/ibkr-portfolio-monitor/SKILL.md) —
+  a skill for account status checks: positions, P&L, cash/margin health,
+  concentration and currency exposure, performance, and recent
+  orders/trades, using `get_account_summary`, `get_account_positions`,
+  `get_account_balances`, `get_account_orders`, `get_account_trades`,
+  `get_pa_allocation`, and `get_pa_performance_all_periods`.
 
 ## Scope
 
-This skill is **read-only research**: it never places, modifies, or cancels
-an order, and never creates alerts or watchlists. It answers "what's this
-instrument doing" and "how does this company fit into its market" — not
-"what should I trade."
+Both skills are **read-only**: neither places, modifies, or cancels an
+order, and neither creates alerts or watchlists. They answer "what's this
+instrument doing" and "where does my account stand" — not "what should I
+trade."
 
 ## Requirements
 
@@ -31,8 +37,7 @@ the skill is copied/symlinked into a project that is).
 
 ## Roadmap
 
-Not included in this version, but natural follow-ups as separate skills:
+Not included yet, but natural follow-ups as separate skills:
 
-- Portfolio & risk monitoring (positions, balances, margin cushion, P&L)
 - Alerts and watchlist management
 - Order drafting with a mandatory human-confirmation step before submission
