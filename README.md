@@ -19,13 +19,24 @@ connector into a market research assistant.
   orders/trades, using `get_account_summary`, `get_account_positions`,
   `get_account_balances`, `get_account_orders`, `get_account_trades`,
   `get_pa_allocation`, and `get_pa_performance_all_periods`.
+- [`.claude/skills/ibkr-alerts-watchlists/`](.claude/skills/ibkr-alerts-watchlists/SKILL.md) —
+  a skill for creating, viewing, editing, pausing, and deleting price/
+  volume/margin-cushion/daily-P&L alerts, and for creating, viewing,
+  editing, and deleting watchlists, using `create_alert`, `get_alerts`,
+  `get_alert`, `update_alert`, `set_alert_status`, `delete_alert`,
+  `create_watchlist`, `get_watchlists`, `get_watchlist`, `edit_watchlist`,
+  and `delete_watchlist`.
 
 ## Scope
 
-Both skills are **read-only**: neither places, modifies, or cancels an
-order, and neither creates alerts or watchlists. They answer "what's this
-instrument doing" and "where does my account stand" — not "what should I
-trade."
+The research and portfolio-monitor skills are **read-only**: they never
+place, modify, or cancel an order, and never create alerts or watchlists.
+They answer "what's this instrument doing" and "where does my account
+stand" — not "what should I trade."
+
+The alerts/watchlists skill **does** mutate account state (it's the whole
+point), but only alerts and watchlists — never orders. It always confirms
+before creating, editing, or deleting anything.
 
 ## Requirements
 
@@ -37,7 +48,6 @@ the skill is copied/symlinked into a project that is).
 
 ## Roadmap
 
-Not included yet, but natural follow-ups as separate skills:
+Not included yet, but a natural follow-up as a separate skill:
 
-- Alerts and watchlist management
 - Order drafting with a mandatory human-confirmation step before submission
