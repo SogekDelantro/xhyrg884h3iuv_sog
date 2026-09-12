@@ -1,8 +1,9 @@
 # IBKR Trading Assistant
 
-A Claude Code skill that turns a Claude session connected to the
+A set of Claude Code skills that turn a Claude session connected to the
 [Interactive Brokers (IBKR)](https://www.interactivebrokers.com/) MCP
-connector into a market research assistant.
+connector into a trading assistant: market research, portfolio/risk
+monitoring, alerts and watchlists, and order drafting.
 
 ## What's here
 
@@ -26,6 +27,13 @@ connector into a market research assistant.
   `get_alert`, `update_alert`, `set_alert_status`, `delete_alert`,
   `create_watchlist`, `get_watchlists`, `get_watchlist`, `edit_watchlist`,
   and `delete_watchlist`.
+- [`.claude/skills/ibkr-order-drafting/`](.claude/skills/ibkr-order-drafting/SKILL.md) —
+  a skill for preparing stock, futures, single-leg option/futures-option,
+  and OPT–OPT spread trades via `create_order_instruction` (plus
+  `get_combo_identifier`, `get_order_instructions`, and
+  `delete_order_instruction`). It never executes a live trade — every draft
+  comes with a review URL the user must open and submit themselves in IBKR
+  Desktop/Mobile/TWS/Client Portal.
 
 ## Scope
 
@@ -34,20 +42,21 @@ place, modify, or cancel an order, and never create alerts or watchlists.
 They answer "what's this instrument doing" and "where does my account
 stand" — not "what should I trade."
 
-The alerts/watchlists skill **does** mutate account state (it's the whole
-point), but only alerts and watchlists — never orders. It always confirms
-before creating, editing, or deleting anything.
+The alerts/watchlists skill mutates account state (it's the whole point),
+but only alerts and watchlists — never orders. It always confirms before
+creating, editing, or deleting anything.
+
+The order-drafting skill goes one step further into trade mechanics, but
+stays draft-only by construction: `create_order_instruction` creates an
+instruction, not a live order, and every draft requires the user's own
+review and explicit submission on an IBKR platform to become a real trade.
+None of these skills give buy/sell recommendations — they execute or report
+on decisions the user has already made.
 
 ## Requirements
 
-Use it from a Claude Code session (CLI, desktop, or web) that has the
+Use these from a Claude Code session (CLI, desktop, or web) that has the
 `Interactive_Brokers_IBKR` MCP connector attached to an IBKR account. No
-separate install or server is needed — the skill is picked up automatically
+separate install or server is needed — skills are picked up automatically
 from `.claude/skills/` once this repo is your working directory (or once
-the skill is copied/symlinked into a project that is).
-
-## Roadmap
-
-Not included yet, but a natural follow-up as a separate skill:
-
-- Order drafting with a mandatory human-confirmation step before submission
+they're copied/symlinked into a project that is).
