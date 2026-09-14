@@ -61,7 +61,15 @@ broad.
   check this is intentional.
 - **Concentration**: `get_pa_allocation` with `type: "SECTOR"` or
   `"FINANCIAL_INSTRUMENT"` — a single name or sector dominating NAV is
-  worth surfacing.
+  worth surfacing. Note: despite the tool's docstring claiming the default
+  currency is "USD (account base currency)", it actually always computes in
+  USD regardless of the account's real base currency (check
+  `get_account_summary`'s `currency` field — this account's base is EUR,
+  not USD). The `weight` fractions are currency-agnostic and safe to use
+  directly, but don't mix the absolute `nav` figures from this tool with
+  base-currency figures from `get_account_summary`/`get_account_balances`
+  without converting — they're not the same currency even though nothing
+  in the response says so explicitly.
 - **Currency exposure**: `get_pa_allocation` with `type: "COUNTRY"`/
   `"REGION"`, or just eyeball the per-currency rows from
   `get_account_balances` — large exposure to a currency the user didn't

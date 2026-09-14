@@ -31,10 +31,18 @@ ID:
 - Futures: `search_futures` instead — it returns `contract_id_ex` values
   (e.g. `"12345@CME"`) already scoped to an exchange.
 
-If a symbol is ambiguous (multiple listings, multiple countries/exchanges,
-or a name that maps to several companies), ask the user to disambiguate
-rather than guessing — a wrong contract ID silently produces answers about
-the wrong instrument.
+A single symbol commonly matches many unrelated companies across different
+countries (e.g. `IAG` alone returns International Consolidated Airlines on
+LSE *and* Bolsa de Madrid, Insurance Australia Group on ASX, iA Financial
+on TSE, IAMGOLD on NYSE). When the user names an exchange or market
+explicitly ("on Bolsa de Madrid", "the London listing", "the ASX one"),
+treat that as the primary disambiguator: match the row whose `exchange`
+field corresponds to the named market before falling back to
+`description`/`country_code`. If a symbol is still ambiguous after that
+(multiple listings, multiple countries, or a name that maps to several
+companies) with no exchange named, ask the user to disambiguate rather than
+guessing — a wrong contract ID silently produces answers about the wrong
+instrument.
 
 Never show raw `contract_id` / `contract_id_ex` / `expiration_id` values to
 the user — they're internal plumbing for chaining calls. Present results by
@@ -48,6 +56,20 @@ symbol, company name, expiry date, and exchange instead.
 Use this for "what's X trading at", "what's the bid/ask on this option", or
 as a sanity check before discussing a price level with the user.
 
+**"Closing price" is a different question from "last price."**
+`get_price_snapshot`'s `last` field is whatever the most recent trade
+happened to be — during market hours that's a live tick; outside hours or
+on thin instruments it can still be stale or mid-session. Check the
+`is_close` flag on the `last` object: if it's `false`, that price is not a
+confirmed settlement, only the latest available trade. For a genuine
+closing-price question, prefer the last bar's `close` value from
+`get_price_history` (`step: ONE_DAY`, a short `period` like `TWO_DAYS` or
+`step_count: 1-2`) instead, and say explicitly which source the number came
+from. Don't silently present a non-close `last` price as "today's close" —
+flag the distinction to the user, especially if the two sources disagree
+(thin/illiquid options in particular can show a stale last-trade print well
+away from the current bid/ask or the settlement price).
+
 ## Workflow: price history / chart
 
 1. Resolve the contract ID (Step 0).
@@ -56,6 +78,38 @@ as a sanity check before discussing a price level with the user.
    months, not minute bars).
 3. Summarize the trend/range/volatility in prose; only dump raw bar data if
    the user explicitly wants a table.
+
+If you pass the contract's native `exchange` (e.g. a non-US listing like
+`BM`, `SBF`, `ASX`) and get back `"No market data permissions"`, don't
+conclude the data is unavailable — retry the same `contract_id` with
+`exchange` omitted (SMART default). SMART routing can successfully return
+history for a listing whose native exchange call is rejected on
+entitlements. This fallback does not apply to futures/FOP, which genuinely
+require the native exchange (see `get_price_snapshot`'s exchange note).
+
+## Workflow: technical analysis (trend, moving averages, support/resistance)
+
+1. Resolve the contract ID (Step 0).
+2. `get_price_history` with daily bars (`step: ONE_DAY`) over a lookback
+   matched to the ask — `ONE_YEAR` is a reasonable default for a general
+   "technical analysis" request; shorten it if the user asks about a
+   specific recent window.
+3. Compute, from the daily closes:
+   - Moving averages: 20/50/100/200-day SMA (use whichever fit the
+     lookback length — don't compute a 200-day SMA off 90 days of bars).
+   - RSI(14) off daily closes, for an overbought/oversold read.
+   - Annualized volatility from the stdev of daily log/simple returns
+     (`stdev * sqrt(252)`), for later use in any volatility-based range.
+4. Support/resistance zones: find local pivot highs/lows (a bar that is the
+   max/min within a symmetric window, e.g. Β±5 trading days) across the
+   lookback, then cluster nearby pivot levels into zones rather than citing
+   single-cent price points — real S/R is a range, not an exact tick.
+5. State where price sits relative to the moving averages and the nearest
+   support/resistance zones, and what RSI implies, in plain prose.
+
+This produces a chart-based read (trend direction, momentum, levels), not a
+fundamental one — say so if the user's question mixes in fundamentals
+(earnings, valuation, news) that this workflow doesn't cover.
 
 ## Workflow: option chain analysis
 
@@ -82,6 +136,37 @@ For a multi-leg strategy (spread, combo) the user wants to *understand*
 `strategy_name`/`description` for what the legs amount to (e.g. confirming
 "yes, that's a bull call spread") — just don't follow it with
 `create_order_instruction`.
+
+## Workflow: probability / statistical projections
+
+In scope: a user can ask quantitative questions like "what's the
+probability this reaches price X within N months" or "what's a plausible
+3-month range." Answering with a statistical model (e.g. a random-walk /
+Monte Carlo simulation calibrated to historical volatility) is research,
+not advice, as long as it stays a probability/range estimate and not a
+directional call.
+
+1. Get annualized volatility from the technical-analysis workflow (stdev of
+   daily returns Γ— `sqrt(252)`), or compute it fresh from `get_price_history`
+   daily bars if that wasn't already done.
+2. Default to a **zero-drift (martingale) assumption** — i.e., simulate
+   with no built-in bullish or bearish edge — unless the user asks for a
+   specific drift/trend assumption. Zero-drift is the defensible neutral
+   default; picking a drift yourself edges toward a directional call, which
+   is out of scope.
+3. Simulate a lognormal random walk (daily steps, `mu = -0.5 * sigma_daily^2`,
+   `sigma_daily = ann_vol / sqrt(252)`) out to the requested horizon, and
+   report:
+   - Probability the path *ever touches* the target level (not just probability
+     it's above/below the target exactly at the horizon end — these are
+     different numbers and both are worth giving).
+   - If it touches, the distribution of *when* (median/mean days, and a
+     25th-75th percentile range) rather than a single point estimate.
+4. Always state plainly: this is a statistical extrapolation of historical
+   volatility under a no-edge assumption, not a fundamental forecast — it
+   ignores earnings, macro events, and anything that would make future
+   volatility or drift differ from the historical sample. Don't let the
+   output read as a prediction of what the instrument will actually do.
 
 ## Workflow: thematic / competitor / sector context
 
