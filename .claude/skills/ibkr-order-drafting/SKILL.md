@@ -57,8 +57,15 @@ as a separate single-leg FOP instruction instead.
 
 Reuse the resolution approach from the market-research skill:
 
-- **STK**: `search_contracts`, exact `symbol` match, disambiguate by
-  `description`/`country_code` if needed. Use `underlying_contract_id`,
+- **STK**: `search_contracts`, exact `symbol` match. When the user names an
+  exchange or market ("on Bolsa de Madrid", "the London listing"), match the
+  row whose `exchange` field corresponds to it **before** falling back to
+  `description`/`country_code` — one ticker routinely spans unrelated
+  companies and listings (`IAG` alone covers International Consolidated
+  Airlines on both LSE and Bolsa de Madrid, Insurance Australia Group on
+  ASX, iA Financial on TSE, and IAMGOLD on NYSE). A wrong pick here drafts a
+  real order object against the wrong instrument, so if it stays ambiguous
+  after that, ask — never guess. Use `underlying_contract_id`,
   **stringified**, as `contract_id_ex`.
 - **FUT**: `search_futures` — use its `contract_id_ex` verbatim (already
   includes the exchange, e.g. `"12345@CME"`).
@@ -92,6 +99,13 @@ Read the full order back to the user in plain language before submitting
 the draft: e.g. "Buy 10 AAPL @ market, day order" or "Sell to open 1 TSLA
 Jan 2028 $250 call, limit $12.50, GTC."
 
+The API enforces almost none of this on your behalf: `create_order_instruction`
+marks only `side` as required, so a missing quantity, order type, or even
+contract will not be rejected by the tool — it will just produce a draft
+that doesn't say what anyone intended. The read-back above is the real
+guardrail, not a formality; don't skip it on the assumption that a
+malformed call would fail anyway.
+
 ## Step 3: create the draft
 
 Call `create_order_instruction`. Report back:
@@ -109,8 +123,10 @@ Call `create_order_instruction`. Report back:
   (portfolio-monitor skill), which lists already-**live** orders — drafts
   from this skill are a separate, pre-submission list.
 - Cancel a draft the user no longer wants: `delete_order_instruction` with
-  its id. Confirm which draft (by description) before deleting —
-  irreversible.
+  its id passed as a quoted JSON **string** (`"124"`, not the number `124`),
+  copied verbatim from `get_order_instructions`. Confirm which draft by
+  description first — a deleted draft can be recreated, but deleting the
+  wrong one still loses the user's work.
 
 ## Output style
 
