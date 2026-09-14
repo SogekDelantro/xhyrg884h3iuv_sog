@@ -30,8 +30,18 @@ go-ahead, not just their initial request.
   guess at current contents.
 - Before editing an alert: `update_alert` is also a **full replace** of that
   alert's settings. Always call `get_alert` first and carry forward every
-  field the user isn't explicitly changing (tif, expiry_date, exchange,
-  email, email_note) — a naive update will silently clear them.
+  field the user isn't explicitly changing — `tif`, `expiry_date`,
+  `exchange`, `email`, `email_note` — since a naive update silently clears
+  them. Watch the field-name mismatch: `get_alert` returns the display name
+  as `name`, while `update_alert` requires it as `symbol`.
+- **`active_hours` cannot survive an edit.** `create_alert` and
+  `update_alert` both accept `active_hours` (`REGULAR`/`EXTENDED`/
+  `OVERNIGHT`/`ALL`), but `get_alert` does not return it — so there is no
+  way to read the current value and carry it forward, and every
+  `update_alert` call resets it to the default. When an alert's active
+  hours matter (an overnight-only alert, say), tell the user the edit will
+  reset them, and offer to delete and recreate the alert with
+  `active_hours` set explicitly rather than editing it.
 
 ## Workflow: creating an alert
 
@@ -44,6 +54,15 @@ go-ahead, not just their initial request.
    - "alert on volume over X" → `VOLUME`.
    - "alert on % move" → `PERCENT_CHANGE` (value is a percentage number,
      e.g. `5` for 5%, not `0.05`).
+   - "alert on the bid/ask midpoint" → `MID_POINT`.
+   - "whichever comes first, the last price or the bid/ask" →
+     `LAST_OR_BID_ASK`.
+   - "alert on the short borrow fee rate" → `FEE_RATE` (value is a
+     percentage rate, same convention as `PERCENT_CHANGE`).
+   - "alert when shortable shares drop below X" → `SHORTABLE_SHARES`
+     (value is a share count).
+   - `DOUBLE_BID_ASK` (average of bid and ask) and `DOUBLE_LAST` are also
+     available if the user asks for them by name.
    - "alert if my margin cushion drops below X%" → `MARGIN_CUSHION`, no
      `contract_id`/`exchange` needed (account-level).
    - "alert if I'm down X today" → `DAILY_PNL`, account-level.
@@ -51,15 +70,24 @@ go-ahead, not just their initial request.
      If the user gives a dollar amount for either of these, don't convert
      it yourself — tell them these condition types are percentage-only and
      ask them to restate the threshold as a percentage.
-3. Ask about email notification if the user didn't specify one:
+3. Choose the alert's lifetime (`tif`) deliberately and say which you used:
+   `UNTIL_TRIGGERED` is the **default and fires only once**, after which the
+   alert is spent; `UNTIL_DELETED` is a standing alert that keeps working
+   until removed; `UNTIL_DATE` needs an `expiry_date` (date-only ISO string,
+   e.g. `"2026-05-27"`). A request phrased as "let me know whenever X drops
+   below 200" describes a standing alert, not the one-shot default — don't
+   fall through to the default on that kind of ask without flagging it.
+4. Ask about email notification if the user didn't specify one:
    **without an email, the alert only surfaces inside IBKR Desktop** — no
    push, SMS, or other notification. If they want to be notified anywhere
    else (mobile, email inbox), they need to supply an email.
-4. Always tell the user, before or immediately after creating the alert,
+5. Always tell the user, before or immediately after creating the alert,
    that alerts created this way are **only visible/manageable in IBKR
    Desktop** — they will not appear in IBKR Mobile, TWS, or Client Portal.
    This is a platform limitation worth surfacing every time, not just once.
-5. Call `create_alert`.
+6. Call `create_alert`. Set `active_hours` explicitly here if the user cares
+   when the alert can fire — it's easiest to get right at creation, since it
+   can't be preserved through a later edit (see the hard rules above).
 
 ## Workflow: viewing / managing alerts
 
@@ -67,7 +95,8 @@ go-ahead, not just their initial request.
 - Full detail on one: `get_alert` with its id. Do this before `update_alert`
   (see full-replace rule above).
 - Pause/resume without deleting: `set_alert_status` with `action: "PAUSE"`
-  or `"RESUME"`.
+  or `"RESUME"`. It takes an `ids` **array**, so pause or resume a batch in
+  a single call rather than looping one alert at a time.
 - Delete: `delete_alert` — confirm first, irreversible.
 
 ## Workflow: creating a watchlist
@@ -85,10 +114,13 @@ go-ahead, not just their initial request.
 ## Workflow: viewing / editing a watchlist
 
 1. `get_watchlists` to list all watchlists and resolve a name to an `id`.
-   **Names are not guaranteed unique** — this account currently has two
-   different watchlists both named "Favorites" (different ids). If the
-   user's name is ambiguous, show them the candidates (id + name) and ask
-   which one, rather than guessing.
+   **Names are not guaranteed unique** — the same name across two different
+   ids is common in practice, so never assume a name resolves to exactly one
+   list, and re-check the live set rather than relying on what it contained
+   earlier in a conversation. When a name matches more than one, ask the
+   user which they mean, distinguishing the candidates by their contents
+   (call `get_watchlist` on each) rather than by exposing raw ids, per the
+   output-style rule below.
 2. `get_watchlist` with the id for the full current instrument list
    (`contract_id_ex` + `contract_description` per row) and to confirm the
    current name.

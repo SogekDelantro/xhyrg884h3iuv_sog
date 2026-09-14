@@ -61,7 +61,16 @@ broad.
   check this is intentional.
 - **Concentration**: `get_pa_allocation` with `type: "SECTOR"` or
   `"FINANCIAL_INSTRUMENT"` — a single name or sector dominating NAV is
-  worth surfacing.
+  worth surfacing. Careful with this tool's `currency` field: it reports
+  `"USD"` on a default call, but the `nav` figures come back denominated in
+  the account's **base** currency, not converted to USD — the label is
+  wrong, the numbers are base. So when the base currency isn't USD, taking
+  the label at face value and converting would corrupt every figure. Don't
+  assume either way: reconcile before relying on absolute `nav` values —
+  the long stocks + ETFs `nav` should equal `get_account_balances`' `BASE`
+  row `stock_market_value`, which tells you directly what currency you're
+  holding. The `weight` fractions are currency-agnostic and safe to use as-is,
+  so prefer them whenever percentages answer the question.
 - **Currency exposure**: `get_pa_allocation` with `type: "COUNTRY"`/
   `"REGION"`, or just eyeball the per-currency rows from
   `get_account_balances` — large exposure to a currency the user didn't
