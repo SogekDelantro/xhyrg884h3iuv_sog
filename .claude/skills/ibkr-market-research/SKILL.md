@@ -59,13 +59,21 @@ as a sanity check before discussing a price level with the user.
 **"Closing price" is a different question from "last price."**
 `get_price_snapshot`'s `last` field is whatever the most recent trade
 happened to be — during market hours that's a live tick; outside hours or
-on thin instruments it can still be stale or mid-session. Check the
-`is_close` flag on the `last` object: if it's `false`, that price is not a
-confirmed settlement, only the latest available trade. For a genuine
-closing-price question, prefer the last bar's `close` value from
-`get_price_history` (`step: ONE_DAY`, a short `period` like `TWO_DAYS` or
-`step_count: 1-2`) instead, and say explicitly which source the number came
-from. Don't silently present a non-close `last` price as "today's close" —
+on thin instruments it can still be stale or mid-session. The `last` object
+carries an `is_close` flag, which appears to mark whether the price is a
+settled close (it read `false` on both legs of a 2026-09-14 option lookup
+during the session). That reading is an inference from the field name and
+observed values, not something confirmed against IBKR documentation — so
+treat `is_close: false` as a reason to double-check rather than as proof of
+anything, and don't quote the flag's meaning to the user as fact.
+
+For a genuine closing-price question, cross-check the last bar's `close`
+value from `get_price_history` (`step: ONE_DAY`, a short `period` like
+`TWO_DAYS` or `step_count: 1-2`), and say explicitly which source the
+number came from. Note this cross-check has not yet been validated against
+a known-good close on this connector; if the two sources agree, you have
+real confidence, and if they disagree, report both rather than silently
+picking one. Don't silently present a non-close `last` price as "today's close" —
 flag the distinction to the user, especially if the two sources disagree
 (thin/illiquid options in particular can show a stale last-trade print well
 away from the current bid/ask or the settlement price).
@@ -81,11 +89,25 @@ away from the current bid/ask or the settlement price).
 
 If you pass the contract's native `exchange` (e.g. a non-US listing like
 `BM`, `SBF`, `ASX`) and get back `"No market data permissions"`, don't
-conclude the data is unavailable — retry the same `contract_id` with
-`exchange` omitted (SMART default). SMART routing can successfully return
-history for a listing whose native exchange call is rejected on
-entitlements. This fallback does not apply to futures/FOP, which genuinely
-require the native exchange (see `get_price_snapshot`'s exchange note).
+immediately conclude the data is unavailable — retry the same `contract_id`
+with `exchange` omitted (SMART default). This worked for a Bolsa de Madrid
+listing whose `BM` call was rejected on entitlements; it is one observed
+case, not a guaranteed rule, so treat it as worth trying rather than as
+something that always works.
+
+**Sanity-check what comes back before using it.** A fallback that silently
+resolves to a different venue or listing of the same company will produce
+confidently wrong analysis. Check that the price scale and currency match
+the listing you intended — e.g. IAG on Madrid trades around €4-5 while the
+London line trades in pence around 300-400, so a returned series in the
+wrong scale is obvious if you look for it, and invisible if you don't. If
+the scale doesn't match the market you meant, say so rather than analyzing
+it.
+
+This fallback does not apply to futures/FOP, which genuinely require the
+native exchange — the `get_price_snapshot` and `get_price_history` tool
+descriptions both spell out that SMART routing only covers SMART-eligible
+instruments (US equities and equity options).
 
 ## Workflow: technical analysis (trend, moving averages, support/resistance)
 
@@ -167,7 +189,23 @@ directional call.
    specific drift/trend assumption. Zero-drift is the defensible neutral
    default; picking a drift yourself edges toward a directional call, which
    is out of scope.
-3. Simulate a lognormal random walk (daily steps, `mu = -0.5 * sigma_daily^2`,
+3. **If the user names a directional scenario, don't silently model
+   something else.** A request like "take the base case" or "assume the
+   bullish scenario" refers to a directional view, but a zero-drift
+   simulation encodes no direction at all — so the output does not answer
+   the question they think they asked. Say so in one line ("the simulation
+   is direction-neutral, so this isn't conditioned on the bounce scenario"),
+   and either keep it neutral or, if they want the scenario priced in, ask
+   what drift to assume rather than inventing one. Never let a
+   scenario-framed question imply the model agreed with the scenario.
+4. **State the starting price you simulated from, and flag it if it differs
+   from live spot.** Users often quote a hypothetical entry ("if I buy at
+   4.70") that sits away from the current price, and the gap moves the
+   answer materially — for IAG, simulating from a 4.70 entry gave a 56.6%
+   chance of touching 5.10 within three months versus 62.6% from the 4.77
+   spot, with the median touch at 17 versus 13 trading days. Report which
+   basis you used, and give both when the difference is meaningful.
+5. Simulate a lognormal random walk (daily steps, `mu = -0.5 * sigma_daily^2`,
    `sigma_daily = ann_vol / sqrt(252)`) out to the requested horizon, and
    report:
    - Probability the path *ever touches* the target level (not just probability
@@ -175,7 +213,15 @@ directional call.
      different numbers and both are worth giving).
    - If it touches, the distribution of *when* (median/mean days, and a
      25th-75th percentile range) rather than a single point estimate.
-4. Always state plainly: this is a statistical extrapolation of historical
+6. **If the user gave a position size, carry it through to money.** When
+   someone says "300 shares at 4.70", the share count is part of the
+   question — translate the target into what it's worth (300 shares Γ— the
+   €0.40 move to 5.10 = €120 on a ~€1,410 position) instead of answering
+   only in percentages and dropping the size they specified. Keep this
+   descriptive: converting a price move into currency is arithmetic on
+   their own stated hypothetical, whereas judging whether the size is
+   appropriate for their account is advice and stays out of scope.
+7. Always state plainly: this is a statistical extrapolation of historical
    volatility under a no-edge assumption, not a fundamental forecast — it
    ignores earnings, macro events, and anything that would make future
    volatility or drift differ from the historical sample. Don't let the
