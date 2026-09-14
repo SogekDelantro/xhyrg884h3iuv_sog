@@ -97,13 +97,26 @@ require the native exchange (see `get_price_snapshot`'s exchange note).
 3. Compute, from the daily closes:
    - Moving averages: 20/50/100/200-day SMA (use whichever fit the
      lookback length — don't compute a 200-day SMA off 90 days of bars).
-   - RSI(14) off daily closes, for an overbought/oversold read.
+   - RSI(14) from daily closes, using **Wilder's smoothing** — seed with a
+     14-period simple average of gains/losses, then roll it forward as
+     `avg = (prev_avg * 13 + current) / 14`. This is what IBKR and standard
+     charting platforms show, so it's what the user will be comparing
+     against. Do not substitute a plain 14-period simple average of
+     gains/losses: it diverges sharply in a sustained trend and will flip
+     the overbought/oversold verdict (IAG on 2026-09-14 read 25.2 on the
+     simple method — "oversold" — versus 36.1 on Wilder's, which is not).
    - Annualized volatility from the stdev of daily log/simple returns
      (`stdev * sqrt(252)`), for later use in any volatility-based range.
-4. Support/resistance zones: find local pivot highs/lows (a bar that is the
-   max/min within a symmetric window, e.g. Β±5 trading days) across the
-   lookback, then cluster nearby pivot levels into zones rather than citing
-   single-cent price points — real S/R is a range, not an exact tick.
+4. Support/resistance zones: find local pivots across the lookback — a bar
+   that is the max/min within a symmetric window, e.g. Β±5 trading days.
+   Take resistance pivots from the bar **highs** and support pivots from
+   the bar **lows**, not from closes: closes understate the extremes the
+   market actually traded and tested, and the two sources give materially
+   different levels (on IAG, close-based pivots put support at 4.33 where
+   the lows put it at 4.14). Use that same high/low basis for any 52-week
+   high/low you quote alongside the zones, so the levels in one answer are
+   all derived consistently. Cluster nearby pivots into zones rather than
+   citing single-cent price points — real S/R is a range, not an exact tick.
 5. State where price sits relative to the moving averages and the nearest
    support/resistance zones, and what RSI implies, in plain prose.
 
